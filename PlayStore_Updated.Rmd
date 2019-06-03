@@ -1,0 +1,254 @@
+---
+title: "GooglePlayStore_Storytelling_C00235924"
+author: "Tasneem Suleman"
+date: "7 January 2019"
+output: 
+  word_document:
+    toc: true
+    fig_width: 8
+    fig_height: 8
+---
+
+```{r setup, include=FALSE, message=FALSE, eval=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+#The following chunk of code calls out all the libraries required to read the dataset in a csv, clean, represent and visualize the data in RStudio. 
+```{r Libraries}
+library(tidyr)
+library(dplyr)
+library(readr)
+library(ggplot2)
+library(ggthemes)
+library(tidyverse)
+library(wordcloud)
+library(tm)
+library(gifski)
+library(tweenr)
+library(transformr)
+library(gganimate)
+library(plotrix)
+library(stringr)
+library(lubridate)
+```
+
+#Reading the csv file containing the dataset
+```{r Loading Data}
+playStore <- read_csv("PlayStore.csv")
+playStore
+
+dim(playStore) # displaying the dimensions of the dataset
+summary(playStore) #displaying the details of the datset
+```
+
+
+#Cleaning the dataset for abnormal values
+Values in the rating column which do not correspond to the standard rating scale have been replaced with NA and the values having NA as their rating have been assigned a zero.
+```{r Cleaning}
+Rating <- playStore[which(playStore$Rating == 19),] <- NA
+
+playStore[!is.na(playStore$Rating)& playStore$Installs<10001,"Rating"] <- 0
+
+summary(playStore$Rating)
+```
+
+
+#Cleaning the dataset- Changing the columns to the desired type.
+The Installs column have been converted to character type and then to the desired numeric type.
+The Size column has been converted to numeric type.
+```{r}
+
+playStore_cleaned <- playStore %>%
+  mutate(
+    Installs = gsub("\\+", "", as.character(Installs)),
+    Size = as.numeric(Size),
+    Reviews = as.numeric(Reviews),
+    Installs <- str_replace_all(Installs,",",""),
+    Size = str_replace_all(Size,"k",""),
+    Installs = as.numeric(gsub(",", "", Installs))
+  )
+
+playStore_cleaned[is.na(playStore_cleaned$Size),"Size"] <- median(playStore_cleaned$Size,na.rm=T)
+
+
+str(playStore_cleaned)
+```
+
+
+
+#Renaming column names
+```{r Renaming columns}
+colnames(playStore_cleaned)[colnames(playStore_cleaned)=="Last Updated"] <- "Last_Updated"
+```
+
+
+#Removing duplicate values
+Reducing redundancy by removing the duplicate values.
+```{r Eliminating duplicates}
+nrow(playStore_cleaned %>% distinct())
+playStore_cleaned <- playStore_cleaned %>% distinct()
+```
+
+#Categorizing Installations
+The Apps have been categorized by the number of times they have been installed.
+```{r}
+playStore_cleaned%>%filter(!is.na(Installs))
+
+IC<-ifelse(playStore_cleaned$Installs <10000,"Grade C",ifelse(playStore_cleaned$Installs<1000000,
+                "Grade B",ifelse(playStore_cleaned$Installs <100000000,"Grade A","Grade A+")))
+
+IC <- factor(IC, levels = c("Grade A+","Grade A","Grade B","Grade C"))
+
+playStore_cleaned <- cbind(playStore_cleaned ,as.data.frame(IC))
+```
+
+
+#Exploring the catgories which no reviews. 
+```{r}
+null_values <- playStore_cleaned%>%group_by(IC)%>%summarise(count_of_na = sum(is.na(Rating)))
+
+p<-ggplot(null_values,aes(fill=IC))+geom_bar(stat = "identity",width =0.5 ,aes(y=count_of_na,x=reorder(IC,desc(count_of_na))))+labs(x="Popular Category" ,y="Missing Value Count",title = "Number of Missing values in each category")
+
+p+theme(legend.position = "None")
+```
+The group of apps which have been installed less than 10000 times have no reviews at all.
+This might lead to the assumption that there exist some criteria based on which an app can be reviewed by users.
+
+
+#Displaying the different categories of apps available on PlayStore.
+```{r  Categories}
+unique(playStore_cleaned$Category)
+
+pie(table(playStore_cleaned$Category), main = "Apps in Each category", border = "brown", 
+              cex = .5, radius = 1)
+
+```
+
+The Family category seems to have the highest number of apps.  This could mean that developers prefer to cater to family apps. 
+
+
+#Category which has received most positive reviews in all of the other category.
+```{r echo=FALSE}
+
+#playStore_cleaned[!is.na(playStore_cleaned$Rating) & playStore_cleaned$Installs>11000,"Rating"] <- mean(playStore_cleaned$Rating,na.rm = TRUE)
+
+playStore_cleaned <- playStore_cleaned%>%filter(!is.na(Category))
+playStore_cleaned <- playStore_cleaned%>%filter(Category != "1.9")  #[!is.na(playStore_cleaned$Category)] <- ""
+
+most_pos<-playStore_cleaned%>%group_by(Category)%>%summarise(mean_rating=mean(Rating,na.rm = TRUE))%>%ungroup()
+
+mospos_plot<-ggplot(most_pos,aes(x=reorder(Category,mean_rating),y=mean_rating,fill=Category))+geom_bar(stat = "identity",width =0.5)+coord_flip()+labs(title="Categories with highest rating",x="App Categories",y="Average Ratings of apps by Category")
+
+mospos_plot <- mospos_plot + theme(legend.position="none")
+mospos_plot
+
+#mospos_plot+transition_states(Category) + shadow_mark()
+```
+The highest number of positive review belongs to the Education category. Educational apps seem to of better quality than the rest. The reason might be that they have a greater purpose to serve.
+
+
+#Determing the categories which have the most installations(Free+Paid).
+```{r}
+playStore_cleaned$Category <- tolower(playStore_cleaned$Category)
+
+mostinstalled <- playStore_cleaned%>%group_by(Category)%>%summarise(Install=sum(Installs,na.rm = TRUE))%>%ungroup()%>%top_n(10)
+
+new <- ggplot(mostinstalled, aes(reorder(Category,Install),y=Install,fill=Category))+ theme(axis.text.x = element_text(angle=65, vjust=0.6))+geom_bar(stat = "identity",width =0.5)+ labs(x="Installs per  Category",y="Category",title="Installation in each category")
+
+new
+
+
+#new+transition_states(Category) + shadow_mark()
+```
+
+It could have been anticipated that the Games would be the most downloaded category since it is preferred by all age groups, especially kids and teenagers.
+Games is followed by Communication and Social apps. Naturally since, apps like Whatsapp, Facebook, Hike, various calling and video calling apps etc. is almost used by everyone, communication falling in second place is not a shocker. 
+Social apps like Facebook, Instagram, Snapchat have been on the rise since the last decade but it being at the third place is justified.
+
+While most of the apps available on playstore are free including Games, there are some that are paid.
+
+
+#Best Games which are Paid
+```{r}
+playStore_cleaned <- playStore_cleaned%>%filter(!is.na(Category))%>%filter(!is.na(App))
+
+paidgames <- playStore_cleaned%>%
+  filter(Category=="game"  & Type=="Paid" & Rating>=4.2 &Installs>=5000) %>%
+  select(Price,App,IC,Rating)%>%
+  arrange(desc(Rating),Price)
+
+gamesplot<-ggplot(paidgames[1:4,],aes(x=App,y=Price,fill=IC))+geom_bar(stat="identity",width = 0.6) +  scale_fill_hue(c=45, l=80)
+
+gamesplot+labs(title="Best Games in Paid Category")+theme(legend.position = "None")+theme(axis.text.x = element_text(angle = 65,hjust = 0.8))
+
+```
+
+
+#Best Games which are Free
+```{r}
+free <- playStore_cleaned%>%
+  filter(Type=="Free" & Category=="game"  &  Installs>=5000 ) %>%
+  arrange(Rating)%>%
+  select(Price,App,IC,Rating)
+  
+ggplot(free[1:5,],aes(y=Price,x=App,fill=IC))+geom_bar(width = 0.6,stat="identity")+labs(title="Paid Games not worthy of their price")+theme(axis.text.x = element_text(angle = 65,hjust = 0.8))
+
+```
+
+
+#Best Communication Tools which are not so popular
+```{r}
+
+max_c<- playStore_cleaned%>%filter(Category=="communication" & Rating >4.2)%>%select(Reviews,App,IC)%>%arrange(desc(Reviews))
+
+ggplot(max_c[1:31,],aes(x=reorder(App,Reviews),y=Reviews,fill=IC))+geom_bar(width = 0.6,stat="identity")+labs(x="App",y="No of App Reviews",title="Best Communication Apps with number of Reviews")+theme(axis.text.x = element_text(angle=65,hjust = 0.8))
+
+```
+The results here are quite unexpected. 
+
+
+#Best Social Apps which are not so popular
+```{r}
+
+max_s<- playStore_cleaned%>%filter(Category=="social" & Rating >4.2)%>%select(App,Reviews,IC)%>%arrange(desc(Reviews))
+
+ggplot(max_s[1:10,],aes(x=reorder(App,Reviews),y=Reviews,fill=IC))+geom_bar(width =0.5,stat = "identity")+coord_flip()+theme(legend.position= "None")+labs(x="App",y="No of App Reviews",title="Best Social Apps with number of Reviews",caption="Most popular games which have large in size and have an installation rate of around 10 million!")
+```
+From these results, people seem to use unfamiliar apps which are not mainstream or low resolution apps.
+
+
+#Apps updated each year
+```{r}
+playStore_cleaned$Last_Updated<-mdy(playStore_cleaned$Last_Updated)
+playStore_cleaned$Year_Updated<-year(playStore_cleaned$Last_Updated)
+playStore_cleaned$Month_Updated<-month(playStore_cleaned$Last_Updated)
+
+year_wise <- playStore_cleaned%>%group_by(Year_Updated)%>%summarise(Count=n())%>%ungroup()
+
+p<- ggplot(year_wise,aes(x=Year_Updated,y=Count))+geom_line(color="Orange")+geom_point(color="Blue")+scale_y_continuous(breaks=seq(0,7000,by=500))+scale_x_continuous(breaks=c(2010:2018))
+
+p+labs(x="Apps updated in Year",y="Count of Apps Updated",title="Count of Apps Updated in Each Year")+transition_reveal(Month_Updated)+shadow_mark()
+```
+Large number of apps have been updated during the years 2017 and 2018.  Developers are to be applauded for the revising the updates and continuous support. Very few apps have been updated from 2010-2016.
+
+#month wise
+```{r}
+month_wise <- playStore_cleaned%>%group_by(Month_Updated)%>%summarise(Count=n())%>%ungroup()
+
+p<-ggplot(month_wise,aes(x=Month_Updated,y=Count))+geom_line(color="Orange")+geom_point(color="Blue")+scale_x_continuous(breaks = c(1:12),labels = c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"))+scale_y_continuous(breaks = c(seq(500,3000,by=500)))
+
+p+labs(x="Count of Apps Updated",y="Months",title="No of apps updated in each month from 2014 to 2018")+transition_reveal(Month_Updated)+shadow_mark()
+```
+A lot of apps seem to have been updated during the July. This might be due to the fact that this dataset was released or uploaded during the month of July.
+
+
+#Content according to the rating given
+```{r}
+colnames(playStore_cleaned)[colnames(playStore_cleaned)=="Content Rating"] <- "Content_Rating"
+
+playStore_cleaned$Content_Rating <- as.factor(playStore_cleaned$Content_Rating)
+ 
+playStore_cleaned %>% filter(!is.na(Rating), Content_Rating!="", !is.na(Installs), Content_Rating!="Unrated") %>%  group_by(Content_Rating) %>% summarize(meanRating = mean(Rating)) %>%  ggplot(mapping = aes(x = Content_Rating, y= meanRating, fill = Content_Rating)) + geom_col() + geom_line(group = 1, size = 0.5) + ggtitle("Mean rating per content rating") + ylab("Mean rating")+transition_states(meanRating)+shadow_mark()
+```
+
